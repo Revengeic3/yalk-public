@@ -16,7 +16,6 @@ WORKDIR /app
 # It is adised to use '0.0.0.0' to allow all incoming connections
 ENV HOST_ADDR="0.0.0.0"
 ENV HTTP_PORT=80
-ENV HTTPS_PORT=443
 ENV WEB_URL="https://localhost"
 
 ENV SOCKET_PORT=9988

@@ -14,6 +14,9 @@ require (
 	nhooyr.io/websocket v1.8.7
 )
 
+require golang.org/x/text v0.7.0 // indirect
+
 require (
 	github.com/klauspost/compress v1.15.15 // indirect
+	golang.org/x/net v0.6.0
 )

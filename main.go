@@ -57,10 +57,9 @@ type configServer struct {
 }
 
 type configNetwork struct {
-	URL     string
-	IP      string
-	Port    string
-	PortTLS string
+	URL  string
+	IP   string
+	Port string
 }
 type dataPayload struct {
 	Success bool   `json:"success"`
@@ -95,10 +94,9 @@ func main() {
 	// socketTransport := os.Getenv("SOCKET_TRANSPORT")
 
 	netConf := configNetwork{
-		URL:     os.Getenv("WEB_URL"),
-		IP:      os.Getenv("HOST_ADDR"),
-		Port:    os.Getenv("HTTP_PORT"),
-		PortTLS: os.Getenv("HTTPS_PORT"),
+		URL:  os.Getenv("WEB_URL"),
+		IP:   os.Getenv("HOST_ADDR"),
+		Port: os.Getenv("HTTP_PORT"),
 	}
 
 	dbConf := postgreConfig{
@@ -135,11 +133,12 @@ func main() {
 		}
 	}
 	activeServer.dbconn = dbConn
-	logger.LogColor("WEBSRV", "Starting HTTP and HTTPS listeners..")
-	activeServer.httpServer, err = startHTTPServer(netConf, dbConn)
-	if err != nil {
-		panic(fmt.Sprintf("Instance cannot start HTTP Server: %v", err))
+	logger.LogColor("WEBSRV", "Starting HTTP (H2C) listener..")
+	activeServer.httpServer = &httpServer{
+		config: netConf,
+		db:     dbConn,
 	}
+	startHTTPServer()
 
 	activeServer.websocket = newWebsocketServer(dbConn, activeServer.channels)
 	// server.tcp = NewSocketServer(server.channels, tcp_dbconn, ip, socketPort, socketTransport)

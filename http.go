@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 type httpServer struct {
@@ -19,12 +21,7 @@ type httpServer struct {
 	db     *sql.DB
 }
 
-func startHTTPServer(netConf configNetwork, dbConn *sql.DB) (*httpServer, error) {
-	httpServer := &httpServer{
-		config: netConf,
-		db:     dbConn,
-	}
-
+func startHTTPServer() {
 	fs := http.FileServer(http.Dir("./static"))
 
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
@@ -37,28 +34,27 @@ func startHTTPServer(netConf configNetwork, dbConn *sql.DB) (*httpServer, error)
 	http.HandleFunc("/chat", chatPage)
 	http.HandleFunc("/profile", profilePage)
 
-	httpAddr := httpServer.config.IP + ":" + string(httpServer.config.Port)
-	httpsAddr := httpServer.config.IP + ":" + string(httpServer.config.PortTLS)
 	go func() {
-		logger.LogColor("WEBSRV", "HTTP listener started")
-		err := http.ListenAndServe(httpAddr, http.HandlerFunc(redirectToTLS))
+		httpAddr := activeServer.httpServer.config.IP + ":" + string(activeServer.httpServer.config.Port)
+
+		logger.LogColor("WEBSRV", fmt.Sprintf("HTTP listener started at http://%s", httpAddr))
+
+		handler := http.HandlerFunc(http.DefaultServeMux.ServeHTTP)
+
+		h2s := &http2.Server{}
+		h1s := &http.Server{
+			Addr:    httpAddr,
+			Handler: h2c.NewHandler(handler, h2s),
+		}
+
+		err := h1s.ListenAndServe()
 		if err != nil {
 			panic(fmt.Sprintf("Error listening HTTP: %v", err))
 			// panic(err)
 		}
 	}()
 
-	go func() {
-		logger.LogColor("WEBSRV", "HTTPS listener started")
-		err := http.ListenAndServeTLS(httpsAddr, "./certs/server.crt", "./certs/server.key", nil)
-		if err != nil {
-			panic(fmt.Sprintf("Error listening HTTPS: %v", err))
-			// panic(err)
-		}
-	}()
-
 	logger.LogColor("WEBSRV", "Loaded succesfully.")
-	return httpServer, nil
 }
 
 func response(w http.ResponseWriter, renderTemplate bool, _fileName string, _payload any) {
@@ -67,12 +63,12 @@ func response(w http.ResponseWriter, renderTemplate bool, _fileName string, _pay
 		case dataPayload:
 			payload, err := json.Marshal(_payload)
 			if err != nil {
-				logger.LogColor("HTTPS", "Marshaling error")
+				logger.LogColor("HTTP", "Marshaling error")
 				w.WriteHeader(http.StatusInternalServerError) // ? Which is best to write http.responses? Write or WriteHeader?
 			}
 			_, err = w.Write(payload)
 			if err != nil {
-				logger.LogColor("HTTPS", "Error writing response")
+				logger.LogColor("HTTP", "Error writing response")
 			}
 			w.WriteHeader(http.StatusOK)
 			return
@@ -89,7 +85,7 @@ func response(w http.ResponseWriter, renderTemplate bool, _fileName string, _pay
 		case dataPayload:
 			payload, err := json.Marshal(_payload)
 			if err != nil {
-				logger.LogColor("HTTPS", "Marshaling error")
+				logger.LogColor("HTTP", "Marshaling error")
 				w.WriteHeader(http.StatusInternalServerError) // ? Which is best to write http.responses? Write or WriteHeader?
 			}
 			err = temp.Execute(w, payload)
@@ -111,7 +107,7 @@ func response(w http.ResponseWriter, renderTemplate bool, _fileName string, _pay
 
 func rootPage(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
-	logger.LogColor("HTTPS", fmt.Sprintf("Index requested from %s", r.RemoteAddr)) // TODO Write Logger() function in core.go
+	logger.LogColor("HTTP", fmt.Sprintf("Index requested from %s", r.RemoteAddr)) // TODO Write Logger() function in core.go
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
@@ -125,7 +121,7 @@ func rootPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func chatPage(w http.ResponseWriter, r *http.Request) {
-	logger.LogColor("HTTPS", fmt.Sprintf("Chat requested from %s", r.RemoteAddr)) // TODO Write Logger() function in core.go
+	logger.LogColor("HTTP", fmt.Sprintf("Chat requested from %s", r.RemoteAddr)) // TODO Write Logger() function in core.go
 	defer r.Body.Close()
 	session, err := sessionValidate(w, r, activeServer.dbconn)
 	if err != nil {
@@ -134,7 +130,7 @@ func chatPage(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = userRead(activeServer.dbconn, session.UserID, true)
 	if err != nil {
-		logger.LogColor("HTTPS", "User not found, general error.")
+		logger.LogColor("HTTP", "User not found, general error.")
 	}
 
 	// var channel_id string
@@ -148,7 +144,7 @@ func chatPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func loginPage(w http.ResponseWriter, r *http.Request) {
-	logger.LogColor("HTTPS", fmt.Sprintf("Login requested from %s", r.RemoteAddr)) // TODO Write Logger() function in core.go
+	logger.LogColor("HTTP", fmt.Sprintf("Login requested from %s", r.RemoteAddr)) // TODO Write Logger() function in core.go
 	defer r.Body.Close()
 
 	//TODO: Change the error query with MessageEvent: https://developer.mozilla.org/en-US/docs/Web/API/MessageEvent
@@ -200,13 +196,13 @@ func loginPage(w http.ResponseWriter, r *http.Request) {
 		userProfile, err := userRead(activeServer.dbconn, dbCreds.ID, true)
 		if err != nil {
 			// ? Here we can implement an "Account setup" as the userProfile is still not created
-			logger.LogColor("HTTPS", "Cannot find user")
+			logger.LogColor("HTTP", "Cannot find user")
 		}
 		// TODO: Move in separate function in session_manager.go
 		// Create and store session
 		err = sessionStore(activeServer.dbconn, session.UserID, session.Expiry, session.Token, session.Created)
 		if err != nil {
-			logger.LogColor("HTTPS", "Could not create the sessions")
+			logger.LogColor("HTTP", "Could not create the sessions")
 			return
 		}
 		// Give to client the cookie for "session_token" and expiry 120s
@@ -218,7 +214,7 @@ func loginPage(w http.ResponseWriter, r *http.Request) {
 		if userProfile.Status != "online" {
 			err := userOnlineUpdate(activeServer.dbconn, userProfile.ID, false)
 			if err != nil {
-				logger.LogColor("HTTPS", "Cannot change user status")
+				logger.LogColor("HTTP", "Cannot change user status")
 				return
 			}
 		}
@@ -236,7 +232,7 @@ func loginPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func profilePage(w http.ResponseWriter, r *http.Request) {
-	logger.LogColor("HTTPS", fmt.Sprintf("Profile requested from %s", r.RemoteAddr)) // TODO Write Logger() function in core.go
+	logger.LogColor("HTTP", fmt.Sprintf("Profile requested from %s", r.RemoteAddr)) // TODO Write Logger() function in core.go
 	defer r.Body.Close()
 	event := "get_profile"
 	session, err := sessionValidate(w, r, activeServer.dbconn)
@@ -246,7 +242,7 @@ func profilePage(w http.ResponseWriter, r *http.Request) {
 	}
 	userProfile, err := userRead(activeServer.dbconn, session.UserID, true)
 	if err != nil {
-		logger.LogColor("HTTPS", "User not found, general error.")
+		logger.LogColor("HTTP", "User not found, general error.")
 	}
 	users := userReadAll(activeServer.dbconn)
 
@@ -261,15 +257,15 @@ func profilePage(w http.ResponseWriter, r *http.Request) {
 }
 
 func logoutPage(w http.ResponseWriter, r *http.Request) {
-	logger.LogColor("HTTPS", fmt.Sprintf("Logout requested from %s", r.RemoteAddr)) // TODO Write Logger() function in core.go
+	logger.LogColor("HTTP", fmt.Sprintf("Logout requested from %s", r.RemoteAddr)) // TODO Write Logger() function in core.go
 	// context := "logout" // * Unused for now
 	defer r.Body.Close()
 	session, err := sessionValidate(w, r, activeServer.dbconn)
 	if err == nil {
-		logger.LogColor("HTTPS", "Removing session from active_ws.dbconn")
+		logger.LogColor("HTTP", "Removing session from active_ws.dbconn")
 		sessionDelete(activeServer.dbconn, session.Token)
 	} else {
-		logger.LogColor("HTTPS", "No session found")
+		logger.LogColor("HTTP", "No session found")
 	}
 	// We need to let the client know that the cookie is expired
 	// In the response, we set the session token to an empty
@@ -285,9 +281,4 @@ func logoutPage(w http.ResponseWriter, r *http.Request) {
 
 func favicon(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "static/images/favicon.ico")
-}
-func redirectToTLS(w http.ResponseWriter, r *http.Request) {
-	logger.LogColor("HTTPS", "Redirecting HTTP requests to HTTPS")
-	url := activeServer.httpServer.config.URL
-	http.Redirect(w, r, fmt.Sprintf("%v:4443", url), http.StatusSeeOther)
 }

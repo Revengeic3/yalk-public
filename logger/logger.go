@@ -47,9 +47,6 @@ func LogColor(component string, message string) {
 	case "HTTP":
 		color := Blue
 		fmt.Printf("%s[%s]%s    |  %s\n", color, component, Reset, message)
-	case "HTTPS":
-		color := BrightBlue
-		fmt.Printf("%s[%s]%s   |  %s\n", color, component, Reset, message)
 	case "SESSION":
 		color := Orange
 		fmt.Printf("%s[%s]%s |  %s\n", color, component, Reset, message)

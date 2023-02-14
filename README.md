@@ -64,14 +64,11 @@ The setup should be pretty straightforward, feel free to open a PR should there 
 7. Clone this repo in a user privileged directory
   `git clone https://github.com/Revengeic3/yalk-public.git`
 8. Change directory to `yalk-public`
-9. Generate the SSL certificates, you can leave all fields empty
-  `openssl req -new -x509 -nodes -out certs/server.crt -keyout certs/server.key`
-10. Change directory back one level (root of `yalk-public`) and edit the `Dockerfile` with the correct configuration
 1. Build the container image
   `docker build -f Dockerfile -t revengeic3/yalk:latest .`
 1. Run the container
-  `docker run -v "$PWD"/certs:/app/certs -p 8080:80 -p 4443:443 revengeic3/yalk:latest`
-1. Open your browser to your set address using HTTPS
+  `docker run -p 8080:80 revengeic3/yalk:latest`
+1. Open your browser to your set address using HTTP
 1. Login with Username 'admin' and Password 'admin'
 1. Works! 🚀
 
